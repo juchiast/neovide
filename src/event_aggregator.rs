@@ -2,6 +2,7 @@ use std::{
     any::{type_name, Any, TypeId},
     collections::{hash_map::Entry, HashMap},
     fmt::Debug,
+    hash::{BuildHasherDefault, Hasher},
     sync::Mutex,
 };
 
@@ -18,33 +19,57 @@ pub struct EventAggregator {
 }
 
 impl EventAggregator {
-    pub fn send<T: Any + Clone + Debug + Send>(&self, event: T) {
+    pub fn send<T: Any + Debug + Send>(&self, event: T) {
         self.inner.lock().unwrap().send(event)
     }
 
-    pub fn register_event<T: Any + Clone + Debug + Send>(&self) -> UnboundedReceiver<T> {
+    pub fn register_event<T: Any + Debug + Send>(&self) -> UnboundedReceiver<T> {
         self.inner.lock().unwrap().register_event()
     }
 }
 
+type AnyMap = HashMap<TypeId, Box<dyn Any + Send>, BuildHasherDefault<IdHasher>>;
+
+// With TypeIds as keys, there's no need to hash them. They are already hashes
+// themselves, coming from the compiler. The IdHasher just holds the u64 of
+// the TypeId, and then returns it, instead of doing any bit fiddling.
+#[derive(Default)]
+struct IdHasher(u64);
+
+impl Hasher for IdHasher {
+    fn write(&mut self, _: &[u8]) {
+        unreachable!("TypeId calls write_u64");
+    }
+
+    #[inline]
+    fn write_u64(&mut self, id: u64) {
+        self.0 = id;
+    }
+
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.0
+    }
+}
+
 struct Inner {
-    parent_senders: HashMap<TypeId, Box<dyn Any + Send>>,
-    unclaimed_receivers: HashMap<TypeId, Box<dyn Any + Send>>,
+    parent_senders: AnyMap,
+    unclaimed_receivers: AnyMap,
 }
 
 impl Default for EventAggregator {
     fn default() -> Self {
         Self {
             inner: Mutex::new(Inner {
-                parent_senders: HashMap::new(),
-                unclaimed_receivers: HashMap::new(),
+                parent_senders: AnyMap::default(),
+                unclaimed_receivers: AnyMap::default(),
             }),
         }
     }
 }
 
 impl Inner {
-    fn send<T: Any + Clone + Debug + Send>(&mut self, event: T) {
+    fn send<T: Any + Debug + Send>(&mut self, event: T) {
         let type_id = TypeId::of::<T>();
         match self.parent_senders.entry(type_id) {
             Entry::Occupied(entry) => {
@@ -65,7 +90,7 @@ impl Inner {
         };
     }
 
-    fn register_event<T: Any + Clone + Debug + Send>(&mut self) -> UnboundedReceiver<T> {
+    fn register_event<T: Any + Debug + Send>(&mut self) -> UnboundedReceiver<T> {
         let type_id = TypeId::of::<T>();
 
         if let Some(receiver) = self.unclaimed_receivers.remove(&type_id) {
