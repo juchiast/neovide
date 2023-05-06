@@ -44,8 +44,7 @@ impl RedrawScheduler {
     }
 
     pub fn should_draw(&self) -> bool {
-        if self.frame_queued.load(Ordering::Relaxed) {
-            self.frame_queued.store(false, Ordering::Relaxed);
+        if self.frame_queued.swap(false, Ordering::Relaxed) {
             true
         } else {
             let mut next_scheduled_frame = self.scheduled_frame.lock().unwrap();
