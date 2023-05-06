@@ -8,9 +8,7 @@ use std::{
 
 use log::trace;
 
-lazy_static! {
-    pub static ref REDRAW_SCHEDULER: RedrawScheduler = RedrawScheduler::new();
-}
+pub static REDRAW_SCHEDULER: RedrawScheduler = RedrawScheduler::new();
 
 pub struct RedrawScheduler {
     scheduled_frame: Mutex<Option<Instant>>,
@@ -18,7 +16,7 @@ pub struct RedrawScheduler {
 }
 
 impl RedrawScheduler {
-    pub fn new() -> RedrawScheduler {
+    pub const fn new() -> RedrawScheduler {
         RedrawScheduler {
             scheduled_frame: Mutex::new(None),
             frame_queued: AtomicBool::new(true),
