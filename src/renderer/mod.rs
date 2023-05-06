@@ -188,15 +188,14 @@ impl Renderer {
                 .filter(|window| !window.hidden)
                 .partition(|window| window.floating_order.is_none());
 
-            root_windows
-                .sort_by(|window_a, window_b| window_a.id.partial_cmp(&window_b.id).unwrap());
+            root_windows.sort_unstable_by(|window_a, window_b| {
+                window_a.id.partial_cmp(&window_b.id).unwrap()
+            });
 
-            floating_windows.sort_by(floating_sort);
+            floating_windows.sort_unstable_by(floating_sort);
 
+            root_windows.append(&mut floating_windows);
             root_windows
-                .into_iter()
-                .chain(floating_windows.into_iter())
-                .collect()
         };
 
         let settings = SETTINGS.get::<RendererSettings>();
