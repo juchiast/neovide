@@ -290,43 +290,26 @@ fn unpack_color(packed_color: u64) -> Color4f {
     }
 }
 
-fn extract_values<const REQ: usize>(values: Vec<Value>) -> Result<[Value; REQ]> {
+fn extract_values<const REQ: usize>(mut values: Vec<Value>) -> Result<[Value; REQ]> {
     if REQ > values.len() {
         Err(ParseError::Format(format!("{values:?}")))
     } else {
-        let mut required_values = vec![Value::Nil; REQ];
-
-        for (index, value) in values.into_iter().enumerate() {
-            if index < REQ {
-                required_values[index] = value;
-            }
-        }
-
-        Ok(required_values.try_into().unwrap())
+        values.truncate(REQ);
+        Ok(values.try_into().unwrap())
     }
 }
 
 fn extract_values_with_optional<const REQ: usize, const OPT: usize>(
-    values: Vec<Value>,
+    mut values: Vec<Value>,
 ) -> Result<([Value; REQ], [Option<Value>; OPT])> {
     if REQ > values.len() {
         Err(ParseError::Format(format!("{values:?}")))
     } else {
-        let mut required_values = vec![Value::Nil; REQ];
-        let mut optional_values = vec![None; OPT];
+        let tail = values.split_off(REQ);
+        let mut optional = tail.into_iter().map(Some).collect::<Vec<_>>();
+        optional.resize(OPT, None);
 
-        for (index, value) in values.into_iter().enumerate() {
-            if index < REQ {
-                required_values[index] = value;
-            } else {
-                optional_values[index - REQ] = Some(value);
-            }
-        }
-
-        Ok((
-            required_values.try_into().unwrap(),
-            optional_values.try_into().unwrap(),
-        ))
+        Ok((values.try_into().unwrap(), optional.try_into().unwrap()))
     }
 }
 
