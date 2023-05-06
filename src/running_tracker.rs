@@ -1,24 +1,19 @@
-use std::sync::{
-    atomic::{AtomicBool, AtomicI32, Ordering},
-    Arc,
-};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
 use log::info;
 
-lazy_static! {
-    pub static ref RUNNING_TRACKER: RunningTracker = RunningTracker::new();
-}
+pub static RUNNING_TRACKER: RunningTracker = RunningTracker::new();
 
 pub struct RunningTracker {
-    running: Arc<AtomicBool>,
-    exit_code: Arc<AtomicI32>,
+    running: AtomicBool,
+    exit_code: AtomicI32,
 }
 
 impl RunningTracker {
-    fn new() -> Self {
+    const fn new() -> Self {
         Self {
-            running: Arc::new(AtomicBool::new(true)),
-            exit_code: Arc::new(AtomicI32::new(0)),
+            running: AtomicBool::new(true),
+            exit_code: AtomicI32::new(0),
         }
     }
 
