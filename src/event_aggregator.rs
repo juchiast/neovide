@@ -85,7 +85,13 @@ impl Inner {
                 let logging_tx = LoggingTx::attach(sender, type_name::<T>().to_owned());
                 logging_tx.send(event).unwrap();
                 entry.insert(Box::new(logging_tx));
-                self.unclaimed_receivers.insert(type_id, Box::new(receiver));
+                if self
+                    .unclaimed_receivers
+                    .insert(type_id, Box::new(receiver))
+                    .is_some()
+                {
+                    panic!("EventAggregator: type already registered");
+                };
             }
         };
     }
