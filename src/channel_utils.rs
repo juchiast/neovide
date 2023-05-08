@@ -32,13 +32,21 @@ where
     }
 }
 
-#[derive(Clone)]
 pub struct LoggingTx<T>
 where
     T: Debug,
 {
     tx: UnboundedSender<T>,
     channel_name: String,
+}
+
+impl<T: Debug> Clone for LoggingTx<T> {
+    fn clone(&self) -> Self {
+        Self {
+            tx: self.tx.clone(),
+            channel_name: self.channel_name.clone(),
+        }
+    }
 }
 
 impl<T> LoggingTx<T>
