@@ -14,6 +14,7 @@ use crate::{
     redraw_scheduler::REDRAW_SCHEDULER,
     renderer::DrawCommand,
     window::WindowCommand,
+    LoggingTx,
 };
 
 pub use cursor::{Cursor, CursorMode, CursorShape};
@@ -63,6 +64,7 @@ pub struct Editor {
     pub mode_list: Vec<CursorMode>,
     pub draw_command_batcher: Arc<DrawCommandBatcher>,
     pub current_mode_index: Option<u64>,
+    pub window_command_tx: LoggingTx<WindowCommand>,
 }
 
 impl Editor {
@@ -74,6 +76,7 @@ impl Editor {
             mode_list: Vec::new(),
             draw_command_batcher: Arc::new(DrawCommandBatcher::new()),
             current_mode_index: None,
+            window_command_tx: EVENT_AGGREGATOR.get_sender(),
         }
     }
 
@@ -81,7 +84,9 @@ impl Editor {
         match command {
             EditorCommand::NeovimRedrawEvent(event) => match event {
                 RedrawEvent::SetTitle { title } => {
-                    EVENT_AGGREGATOR.send(WindowCommand::TitleChanged(title));
+                    self.window_command_tx
+                        .send(WindowCommand::TitleChanged(title))
+                        .unwrap();
                 }
                 RedrawEvent::ModeInfoSet { cursor_modes } => {
                     self.mode_list = cursor_modes;
@@ -104,10 +109,14 @@ impl Editor {
                         .ok();
                 }
                 RedrawEvent::MouseOn => {
-                    EVENT_AGGREGATOR.send(WindowCommand::SetMouseEnabled(true));
+                    self.window_command_tx
+                        .send(WindowCommand::SetMouseEnabled(true))
+                        .unwrap();
                 }
                 RedrawEvent::MouseOff => {
-                    EVENT_AGGREGATOR.send(WindowCommand::SetMouseEnabled(false));
+                    self.window_command_tx
+                        .send(WindowCommand::SetMouseEnabled(false))
+                        .unwrap();
                 }
                 RedrawEvent::BusyStart => {
                     trace!("Cursor off");
@@ -443,7 +452,9 @@ impl Editor {
         match gui_option {
             GuiOption::GuiFont(guifont) => {
                 if guifont == *"*" {
-                    EVENT_AGGREGATOR.send(WindowCommand::ListAvailableFonts);
+                    self.window_command_tx
+                        .send(WindowCommand::ListAvailableFonts)
+                        .unwrap();
                 }
 
                 self.draw_command_batcher

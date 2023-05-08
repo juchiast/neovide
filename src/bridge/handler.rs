@@ -3,9 +3,12 @@ use log::trace;
 use nvim_rs::{Handler, Neovim};
 use rmpv::Value;
 
-use crate::bridge::clipboard::{get_clipboard_contents, set_clipboard_contents};
 #[cfg(windows)]
 use crate::bridge::ui_commands::{ParallelCommand, UiCommand};
+use crate::{
+    bridge::clipboard::{get_clipboard_contents, set_clipboard_contents},
+    LoggingTx,
+};
 use crate::{
     bridge::{events::parse_redraw_event, NeovimWriter},
     editor::EditorCommand,
@@ -15,12 +18,23 @@ use crate::{
     settings::SETTINGS,
 };
 
+#[cfg(windows)]
+use super::UiCommand;
+
 #[derive(Clone)]
-pub struct NeovimHandler {}
+pub struct NeovimHandler {
+    #[cfg(windows)]
+    ui_command_tx: LoggingTx<UiCommand>,
+    editor_command_tx: LoggingTx<EditorCommand>,
+}
 
 impl NeovimHandler {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            #[cfg(windows)]
+            ui_command_tx: EVENT_AGGREGATOR.get_sender(),
+            editor_command_tx: EVENT_AGGREGATOR.get_sender(),
+        }
     }
 }
 
@@ -34,7 +48,7 @@ impl Handler for NeovimHandler {
         arguments: Vec<Value>,
         neovim: Neovim<Self::Writer>,
     ) -> Result<Value, Value> {
-        trace!("Neovim request: {:?}", &event_name);
+        trace!("Neovim request: {:?}", event_name);
 
         match event_name.as_ref() {
             "neovide.get_clipboard" => {
@@ -63,7 +77,7 @@ impl Handler for NeovimHandler {
         arguments: Vec<Value>,
         _neovim: Neovim<Self::Writer>,
     ) {
-        trace!("Neovim notification: {:?}", &event_name);
+        trace!("Neovim notification: {:?}", event_name);
 
         match event_name.as_ref() {
             "redraw" => {
@@ -72,7 +86,9 @@ impl Handler for NeovimHandler {
                         .unwrap_or_explained_panic("Could not parse event from neovim");
 
                     for parsed_event in parsed_events {
-                        EVENT_AGGREGATOR.send(EditorCommand::NeovimRedrawEvent(parsed_event));
+                        self.editor_command_tx
+                            .send(EditorCommand::NeovimRedrawEvent(parsed_event))
+                            .unwrap();
                     }
                 }
             }
@@ -87,11 +103,15 @@ impl Handler for NeovimHandler {
             }
             #[cfg(windows)]
             "neovide.register_right_click" => {
-                EVENT_AGGREGATOR.send(UiCommand::Parallel(ParallelCommand::RegisterRightClick));
+                self.ui_command_tx
+                    .send(UiCommand::Parallel(ParallelCommand::RegisterRightClick))
+                    .unwrap();
             }
             #[cfg(windows)]
             "neovide.unregister_right_click" => {
-                EVENT_AGGREGATOR.send(UiCommand::Parallel(ParallelCommand::UnregisterRightClick));
+                self.ui_command_tx
+                    .send(UiCommand::Parallel(ParallelCommand::UnregisterRightClick))
+                    .unwrap();
             }
             _ => {}
         }

@@ -3,6 +3,7 @@ use crate::{
     event_aggregator::EVENT_AGGREGATOR,
     settings::SETTINGS,
     window::KeyboardSettings,
+    LoggingTx,
 };
 use winit::{
     event::{ElementState, Event, KeyEvent, WindowEvent},
@@ -22,6 +23,7 @@ pub struct KeyboardManager {
     logo: bool,
     ignore_input_this_frame: bool,
     queued_input_events: Vec<InputEvent>,
+    ui_command_tx: LoggingTx<UiCommand>,
 }
 
 impl KeyboardManager {
@@ -34,6 +36,7 @@ impl KeyboardManager {
             logo: false,
             ignore_input_this_frame: false,
             queued_input_events: Vec::new(),
+            ui_command_tx: EVENT_AGGREGATOR.get_sender(),
         }
     }
 
@@ -88,9 +91,11 @@ impl KeyboardManager {
                                 // And a key was pressed
                                 if key_event.state == ElementState::Pressed {
                                     if let Some(keybinding) = self.maybe_get_keybinding(key_event) {
-                                        EVENT_AGGREGATOR.send(UiCommand::Serial(
-                                            SerialCommand::Keyboard(keybinding),
-                                        ));
+                                        self.ui_command_tx
+                                            .send(UiCommand::Serial(SerialCommand::Keyboard(
+                                                keybinding,
+                                            )))
+                                            .unwrap();
                                     }
                                     next_dead_key = None;
                                 } else if key_event.state == ElementState::Released {
@@ -103,9 +108,11 @@ impl KeyboardManager {
                             }
                             InputEvent::ImeInput(raw_input) => {
                                 if self.prev_dead_key.is_none() {
-                                    EVENT_AGGREGATOR.send(UiCommand::Serial(
-                                        SerialCommand::Keyboard(raw_input.to_string()),
-                                    ));
+                                    self.ui_command_tx
+                                        .send(UiCommand::Serial(SerialCommand::Keyboard(
+                                            raw_input.to_string(),
+                                        )))
+                                        .unwrap();
                                 }
                             }
                         }

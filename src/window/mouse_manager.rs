@@ -21,6 +21,7 @@ use crate::{
     settings::SETTINGS,
     window::keyboard_manager::KeyboardManager,
     window::WindowSettings,
+    LoggingTx,
 };
 
 fn clamp_position(
@@ -84,6 +85,7 @@ pub struct MouseManager {
 
     mouse_hidden: bool,
     pub enabled: bool,
+    ui_command_tx: LoggingTx<UiCommand>,
 }
 
 impl MouseManager {
@@ -99,6 +101,7 @@ impl MouseManager {
             window_details_under_mouse: None,
             mouse_hidden: false,
             enabled: true,
+            ui_command_tx: EVENT_AGGREGATOR.get_sender(),
         }
     }
 
@@ -174,25 +177,29 @@ impl MouseManager {
 
             // If dragging and we haven't already sent a position, send a drag command
             if self.dragging.is_some() && has_moved {
-                EVENT_AGGREGATOR.send(UiCommand::Serial(SerialCommand::Drag {
-                    button: self.dragging.as_ref().unwrap().to_owned(),
-                    grid_id: relevant_window_details.id,
-                    position: self.drag_position.into(),
-                    modifier_string: keyboard_manager.format_modifier_string(true),
-                }));
+                self.ui_command_tx
+                    .send(UiCommand::Serial(SerialCommand::Drag {
+                        button: self.dragging.as_ref().unwrap().to_owned(),
+                        grid_id: relevant_window_details.id,
+                        position: self.drag_position.into(),
+                        modifier_string: keyboard_manager.format_modifier_string(true),
+                    }))
+                    .unwrap();
             } else {
                 // otherwise, update the window_id_under_mouse to match the one selected
                 self.window_details_under_mouse = Some(relevant_window_details.clone());
             }
             if has_moved {
                 // Send a mouse move command
-                EVENT_AGGREGATOR.send(UiCommand::Serial(SerialCommand::MouseButton {
-                    button: "move".into(),
-                    action: "".into(), // this is ignored by nvim
-                    grid_id: relevant_window_details.id,
-                    position: self.relative_position.into(),
-                    modifier_string: keyboard_manager.format_modifier_string(true),
-                }))
+                self.ui_command_tx
+                    .send(UiCommand::Serial(SerialCommand::MouseButton {
+                        button: "move".into(),
+                        action: "".into(), // this is ignored by nvim
+                        grid_id: relevant_window_details.id,
+                        position: self.relative_position.into(),
+                        modifier_string: keyboard_manager.format_modifier_string(true),
+                    }))
+                    .unwrap();
             }
 
             self.has_moved = self.dragging.is_some() && (self.has_moved || has_moved);
@@ -223,13 +230,15 @@ impl MouseManager {
                         self.relative_position
                     };
 
-                    EVENT_AGGREGATOR.send(UiCommand::Serial(SerialCommand::MouseButton {
-                        button: button_text.clone(),
-                        action,
-                        grid_id: details.id,
-                        position: position.into(),
-                        modifier_string: keyboard_manager.format_modifier_string(true),
-                    }));
+                    self.ui_command_tx
+                        .send(UiCommand::Serial(SerialCommand::MouseButton {
+                            button: button_text.clone(),
+                            action,
+                            grid_id: details.id,
+                            position: position.into(),
+                            modifier_string: keyboard_manager.format_modifier_string(true),
+                        }))
+                        .unwrap();
                 }
 
                 if down {
@@ -273,7 +282,7 @@ impl MouseManager {
             }
             .into();
             for _ in 0..(new_y - previous_y).abs() {
-                EVENT_AGGREGATOR.send(scroll_command.clone());
+                self.ui_command_tx.send(scroll_command.clone()).unwrap();
             }
         }
 
@@ -300,7 +309,7 @@ impl MouseManager {
             }
             .into();
             for _ in 0..(new_x - previous_x).abs() {
-                EVENT_AGGREGATOR.send(scroll_command.clone());
+                self.ui_command_tx.send(scroll_command.clone()).unwrap();
             }
         }
     }

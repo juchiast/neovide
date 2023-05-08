@@ -1,5 +1,5 @@
 use std::{
-    any::{type_name, Any, TypeId},
+    any::{Any, TypeId},
     collections::{hash_map::Entry, HashMap},
     fmt::Debug,
     hash::{BuildHasherDefault, Hasher},
@@ -19,8 +19,8 @@ pub struct EventAggregator {
 }
 
 impl EventAggregator {
-    pub fn send<T: Any + Debug + Send>(&self, event: T) {
-        self.inner.lock().unwrap().send(event)
+    pub fn get_sender<T: Any + Debug + Send>(&self) -> LoggingTx<T> {
+        self.inner.lock().unwrap().get_sender()
     }
 
     pub fn register_event<T: Any + Debug + Send>(&self) -> UnboundedReceiver<T> {
@@ -69,31 +69,24 @@ impl Default for EventAggregator {
 }
 
 impl Inner {
-    fn send<T: Any + Debug + Send>(&mut self, event: T) {
+    fn get_sender<T: Any + Debug + Send>(&mut self) -> LoggingTx<T> {
         let type_id = TypeId::of::<T>();
         match self.parent_senders.entry(type_id) {
-            Entry::Occupied(entry) => {
-                let sender = entry.get();
-                sender
-                    .downcast_ref::<LoggingTx<T>>()
-                    .unwrap()
-                    .send(event)
-                    .unwrap();
-            }
+            Entry::Occupied(entry) => entry.get().downcast_ref::<LoggingTx<T>>().unwrap().clone(),
             Entry::Vacant(entry) => {
                 let (sender, receiver) = unbounded_channel();
-                let logging_tx = LoggingTx::attach(sender, type_name::<T>().to_owned());
-                logging_tx.send(event).unwrap();
-                entry.insert(Box::new(logging_tx));
+                let logging_tx = LoggingTx::attach(sender);
+                entry.insert(Box::new(logging_tx.clone()));
                 if self
                     .unclaimed_receivers
                     .insert(type_id, Box::new(receiver))
                     .is_some()
                 {
                     panic!("EventAggregator: type already registered");
-                };
+                }
+                logging_tx
             }
-        };
+        }
     }
 
     fn register_event<T: Any + Debug + Send>(&mut self) -> UnboundedReceiver<T> {
@@ -103,7 +96,7 @@ impl Inner {
             *receiver.downcast::<UnboundedReceiver<T>>().unwrap()
         } else {
             let (sender, receiver) = unbounded_channel();
-            let logging_sender = LoggingTx::attach(sender, type_name::<T>().to_owned());
+            let logging_sender = LoggingTx::attach(sender);
 
             if self
                 .parent_senders

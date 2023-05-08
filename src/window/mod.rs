@@ -47,6 +47,7 @@ use crate::{
         load_last_window_settings, save_window_size, PersistentWindowSettings,
         DEFAULT_WINDOW_GEOMETRY, SETTINGS,
     },
+    LoggingTx,
 };
 pub use settings::{KeyboardSettings, WindowSettings};
 
@@ -76,6 +77,8 @@ pub struct WinitWindowWrapper {
     size_at_startup: PhysicalSize<u32>,
     maximized_at_startup: bool,
     window_command_receiver: UnboundedReceiver<WindowCommand>,
+    ui_command_tx: LoggingTx<UiCommand>,
+    editor_command_tx: LoggingTx<EditorCommand>,
 }
 
 impl WinitWindowWrapper {
@@ -119,25 +122,33 @@ impl WinitWindowWrapper {
 
     pub fn send_font_names(&self) {
         let font_names = self.renderer.font_names();
-        EVENT_AGGREGATOR.send(UiCommand::Parallel(ParallelCommand::DisplayAvailableFonts(
-            font_names,
-        )));
+        self.ui_command_tx
+            .send(UiCommand::Parallel(ParallelCommand::DisplayAvailableFonts(
+                font_names,
+            )))
+            .unwrap();
     }
 
     pub fn handle_quit(&mut self) {
         if SETTINGS.get::<CmdLineSettings>().server.is_none() {
-            EVENT_AGGREGATOR.send(UiCommand::Parallel(ParallelCommand::Quit));
+            self.ui_command_tx
+                .send(UiCommand::Parallel(ParallelCommand::Quit))
+                .unwrap();
         } else {
             RUNNING_TRACKER.quit("window closed");
         }
     }
 
     pub fn handle_focus_lost(&mut self) {
-        EVENT_AGGREGATOR.send(UiCommand::Parallel(ParallelCommand::FocusLost));
+        self.ui_command_tx
+            .send(UiCommand::Parallel(ParallelCommand::FocusLost))
+            .unwrap();
     }
 
     pub fn handle_focus_gained(&mut self) {
-        EVENT_AGGREGATOR.send(UiCommand::Parallel(ParallelCommand::FocusGained));
+        self.ui_command_tx
+            .send(UiCommand::Parallel(ParallelCommand::FocusGained))
+            .unwrap();
         REDRAW_SCHEDULER.queue_next_frame();
     }
 
@@ -155,7 +166,9 @@ impl WinitWindowWrapper {
                 self.handle_quit();
             }
             Event::Resumed => {
-                EVENT_AGGREGATOR.send(EditorCommand::RedrawScreen);
+                self.editor_command_tx
+                    .send(EditorCommand::RedrawScreen)
+                    .unwrap();
             }
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
@@ -174,7 +187,9 @@ impl WinitWindowWrapper {
                 ..
             } => {
                 let file_path = path.into_os_string().into_string().unwrap();
-                EVENT_AGGREGATOR.send(UiCommand::Parallel(ParallelCommand::FileDrop(file_path)));
+                self.ui_command_tx
+                    .send(UiCommand::Parallel(ParallelCommand::FileDrop(file_path)))
+                    .unwrap();
             }
             Event::WindowEvent {
                 event: WindowEvent::Focused(focus),
@@ -298,15 +313,19 @@ impl WinitWindowWrapper {
             return;
         }
         self.saved_grid_size = Some(grid_size);
-        EVENT_AGGREGATOR.send(UiCommand::Parallel(ParallelCommand::Resize {
-            width: grid_size.width,
-            height: grid_size.height,
-        }));
+        self.ui_command_tx
+            .send(UiCommand::Parallel(ParallelCommand::Resize {
+                width: grid_size.width,
+                height: grid_size.height,
+            }))
+            .unwrap();
     }
 
     fn handle_scale_factor_update(&mut self, scale_factor: f64) {
         self.renderer.handle_os_scale_factor_change(scale_factor);
-        EVENT_AGGREGATOR.send(EditorCommand::RedrawScreen);
+        self.editor_command_tx
+            .send(EditorCommand::RedrawScreen)
+            .unwrap();
     }
 
     fn has_been_resized(&self) -> bool {
@@ -452,6 +471,8 @@ pub fn create_window() {
         saved_inner_size,
         saved_grid_size: None,
         window_command_receiver,
+        ui_command_tx: EVENT_AGGREGATOR.get_sender(),
+        editor_command_tx: EVENT_AGGREGATOR.get_sender(),
     };
 
     let mut previous_frame_start = Instant::now();
